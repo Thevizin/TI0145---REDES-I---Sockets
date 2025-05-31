@@ -1,115 +1,209 @@
-# 💬 Chat TCP em Python (Servidor e Cliente)
+# 💬 Chat Multi-Cliente em Python
 
-Este projeto implementa um sistema de **chat via socket TCP** usando **Python**, com suporte a:
+Um sistema de chat completo desenvolvido em Python com socket programming, suportando mensagens de texto, envio de arquivos e comunicação privada/global.
 
-- Envio de mensagens **globais** (para todos os usuários)
-- Envio de mensagens **privadas** (para um usuário específico)
-- Histórico de mensagens globais enviado ao cliente ao se conectar
-- Múltiplas conexões simultâneas usando **threads**
+## ✨ Funcionalidades
 
----
+- 🌐 **Mensagens Globais**: Envie mensagens para todos os usuários conectados
+- 🔒 **Mensagens Privadas**: Converse diretamente com usuários específicos
+- 📎 **Envio de Arquivos**: Compartilhe arquivos de qualquer tipo (com interface gráfica)
+- 👥 **Lista de Usuários Online**: Veja quem está conectado em tempo real
+- 📜 **Histórico de Mensagens**: Mensagens globais são mantidas para novos usuários
+- 💾 **Download de Arquivos**: Receba e salve arquivos automaticamente
+- 🛡️ **Interface Thread-Safe**: Evita conflitos de entrada simultânea
 
-## ⚙️ Tecnologias utilizadas
+## 🚀 Como Executar
 
-- Python 3.x
-- `socket`
-- `threading`
-- `time`
+### Pré-requisitos
 
----
+- Python 3.6 ou superior
+- Biblioteca `tkinter` (geralmente incluída no Python)
+
+### Executando no Terminal
+
+1. **Clone o repositório:**
+   ```bash
+   git clone <url-do-repositorio>
+   cd chat-python
+   ```
+
+2. **Execute o servidor:**
+   ```bash
+   python server.py
+   ```
+
+3. **Execute o(s) cliente(s) em terminais separados:**
+   ```bash
+   python client.py
+   ```
+
+### 💡 Executando no VS Code com Terminais Divididos
+
+#### Método 1: Usando o Terminal Integrado
+
+1. **Abra o VS Code** na pasta do projeto
+2. **Abra o terminal integrado**: `Ctrl + ` ` (backtick) ou `View > Terminal`
+3. **Divida o terminal**:
+   - Clique no ícone **"+"** no canto superior direito do terminal
+   - Ou use `Ctrl + Shift + 5` para dividir o terminal
+   - Ou clique no ícone **"Split Terminal"** (ícone de divisão)
+
+4. **Execute os programas**:
+   - **Terminal 1**: `python server.py`
+   - **Terminal 2**: `python client.py`
+   - **Terminal 3** (opcional): `python client.py` (para mais clientes)
+
+#### Método 2: Usando Múltiplas Abas de Terminal
+
+1. **Terminal 1**: `Ctrl + Shift + ` ` (novo terminal)
+2. **Terminal 2**: Clique no **"+"** para criar nova aba
+3. **Terminal 3**: Repita conforme necessário
+
+#### Método 3: Usando a Paleta de Comandos
+
+1. Pressione `Ctrl + Shift + P`
+2. Digite "Terminal: Create New Terminal"
+3. Repita para criar múltiplos terminais
+
+## 🎮 Como Usar
+
+### Primeiro Uso
+
+1. **Inicie o servidor** primeiro
+2. **Execute um ou mais clientes**
+3. **Digite seu nome** quando solicitado
+4. **Navegue pelo menu** com as opções numeradas
+
+### Menu Principal
+
+```
+📋 MENU PRINCIPAL
+==========================================
+
+Escolha uma opção:
+1. 🌐 Mensagem global (todos)
+2. 🔒 Mensagem privada
+3. 👥 Listar usuários online
+4. ❌ Sair
+```
+
+### Enviando Mensagens
+
+- **Mensagem de Texto**: Digite sua mensagem normalmente
+- **Envio de Arquivo**: Selecione um arquivo através da interface gráfica
+- **Mensagem Privada**: Digite o nome exato do destinatário
+
+### Recebendo Arquivos
+
+Quando receber um arquivo, você verá:
+
+```
+==================================================
+📎 ARQUIVO RECEBIDO
+👤 De: João
+📄 Arquivo: documento.pdf
+📊 Tamanho: 245.3KB
+==================================================
+O que deseja fazer?
+1. 💾 Baixar arquivo
+2. ❌ Ignorar
+```
+
+Os arquivos baixados são salvos na pasta `downloads/`.
 
 ## 📁 Estrutura do Projeto
 
 ```
-chat-socket/
-├── server.py   # Código do servidor TCP
-├── client.py   # Código do cliente TCP
-└── README.md   # Este arquivo
+chat-python/
+├── server.py          # Servidor principal
+├── client.py          # Cliente do chat
+├── downloads/         # (criada automaticamente) Arquivos recebidos
+└── README.md          # Este arquivo
 ```
+
+## 🔧 Configuração
+
+### Alterando IP/Porta
+
+No início dos arquivos `server.py` e `client.py`, modifique:
+
+```python
+SERVER_IP = socket.gethostbyname(socket.gethostname())  # IP automático
+PORT = 5050  # Porta do servidor
+```
+
+### Limite de Arquivo
+
+Por padrão, o sistema alerta para arquivos maiores que 10MB:
+
+```python
+if size > 10 * 1024 * 1024:  # 10MB
+```
+
+## 🛠️ Tecnologias Utilizadas
+
+- **Socket Programming**: Comunicação cliente-servidor
+- **Threading**: Manipulação simultânea de múltiplos clientes
+- **JSON**: Protocolo de comunicação estruturada
+- **Base64**: Codificação de arquivos para transmissão
+- **Tkinter**: Interface gráfica para seleção de arquivos
+
+## 📊 Recursos Técnicos
+
+- **Multi-threading**: Cada cliente é tratado em thread separada
+- **Sincronização**: Uso de locks para evitar conflitos de entrada
+- **Protocolo Personalizado**: Comunicação estruturada em JSON
+- **Gestão de Estado**: Controle de arquivos pendentes e usuários online
+- **Tratamento de Erros**: Recuperação graceful de falhas de conexão
+
+## 🐛 Solução de Problemas
+
+### "ConnectionRefusedError"
+- Certifique-se de que o servidor está rodando antes dos clientes
+- Verifique se a porta 5050 não está sendo usada por outro programa
+
+### "ModuleNotFoundError: tkinter"
+- **Linux**: `sudo apt-get install python3-tk`
+- **macOS**: Tkinter vem incluído com Python do python.org
+- **Windows**: Geralmente incluído por padrão
+
+### Arquivos não são recebidos
+- Verifique as permissões da pasta
+- Certifique-se de que há espaço em disco suficiente
+
+### "Usuário não encontrado"
+- Digite o nome exato do usuário (case-sensitive)
+- Use a opção "Listar usuários online" para ver nomes disponíveis
+
+## 🤝 Contribuindo
+
+1. Faça um fork do projeto
+2. Crie uma branch para sua feature (`git checkout -b feature/nova-funcionalidade`)
+3. Commit suas mudanças (`git commit -am 'Adiciona nova funcionalidade'`)
+4. Push para a branch (`git push origin feature/nova-funcionalidade`)
+5. Abra um Pull Request
+
+## 📜 Licença
+
+Este projeto está sob a licença MIT. Veja o arquivo `LICENSE` para mais detalhes.
+
+## 🎯 Próximas Funcionalidades
+
+- [ ] Salas de chat separadas
+- [ ] Criptografia de mensagens
+- [ ] Interface gráfica completa
+- [ ] Histórico persistente
+- [ ] Notificações desktop
+- [ ] Emojis e formatação de texto
+- [ ] Status de usuário (online/ausente/ocupado)
+
+## 💡 Dicas de Uso
+
+- Use nomes de usuário únicos para evitar conflitos
+- Arquivos grandes podem demorar para ser transmitidos
+- Mensagens privadas não são salvas no histórico global
+- O servidor mantém log de todas as atividades no terminal
 
 ---
 
-## 🚀 Como executar localmente (na mesma máquina)
-
-### ✅ Pré-requisitos
-
-- Python 3 instalado
-- Terminal com suporte a múltiplas abas ou splits (como o terminal do VS Code, Windows Terminal, tmux, etc.)
-
-### 🔧 Passos para execução
-
-1. Abra um terminal e divida em dois ou mais splits, ou abra várias abas.
-
-2. Em **um terminal**, execute o servidor com:
-
-   ```
-   python .\server.py
-   ```
-
-   Você verá a saída:
-
-   ```
-   [Servidor] Iniciando socket...
-   [Servidor] Ouvindo em 127.0.0.1:5050
-   ```
-
-3. Em **outros terminais**, execute os clientes:
-
-   ```
-   python .\client.py
-   ```
-
-   Agora você terá um servidor rodando e dois ou mais clientes conectados para conversar entre si.
-
----
-
-## 💬 Comandos disponíveis no cliente
-
-### Definir nome do cliente
-
-```
-name=SeuNome
-```
-
-### Enviar mensagem global para todos
-
-```
-msg-4all=Olá pessoal!
-```
-
-### Enviar mensagem privada para um usuário específico
-
-```
-msg-NomeDoDestinatario=Mensagem privada aqui
-```
-
-### Exemplo
-
-```
-name=Joao
-msg-4all=Oi galera!
-msg-Maria=Oi Maria, tudo bem?
-```
-
----
-
-## 🧠 Funcionamento Interno
-
-- O servidor mantém:
-  - `messagesGlobal`: histórico de mensagens públicas
-  - `messagesPriv`: histórico de mensagens privadas
-  - `connections`: lista de conexões ativas e nomes
-
-- Quando um cliente se conecta:
-  - Ele recebe todo o histórico de mensagens globais
-
-- Quando uma mensagem é enviada:
-  - Se for `msg-4all`, ela é enviada para todos os clientes (menos o remetente)
-  - Se for `msg-Nome=...`, ela é enviada apenas ao cliente com aquele nome
-
----
-
-## 📝 Observações
-
-- As mensagens são codificadas como `utf-8` e enviadas via sockets
-- A letra `b` que aparece no terminal vem da representação `bytes` do Python (`b"mensagem"`). Isso é normal ao imprimir objetos do tipo `bytes`.
+⭐ **Se este projeto foi útil para você, considere dar uma estrela no repositório!**
