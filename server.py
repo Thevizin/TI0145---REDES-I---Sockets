@@ -24,6 +24,13 @@ def search_name_in_connections(name):
             return conn
     return None
 
+def name_already_exists(name):
+    """Verifica se o nome já está sendo usado por outro usuário"""
+    for conn in connections:
+        if conn["name"] == name:
+            return True
+    return False
+
 def view_global_history(client_connection):
     conn = client_connection["conn"]
     for msg in global_messages:
@@ -46,17 +53,19 @@ def send_online_users_list(client_connection):
     conn = client_connection["conn"]
     try:
         online_users = []
+        # CORREÇÃO: Não incluir o próprio usuário na contagem
         for connection in connections:
-            user_info = {
-                "name": connection["name"],
-                "addr": f"{connection['addr'][0]}:{connection['addr'][1]}"
-            }
-            online_users.append(user_info)
+            if connection["name"] != client_connection["name"]:  # Excluir o próprio usuário
+                user_info = {
+                    "name": connection["name"],
+                    "addr": f"{connection['addr'][0]}:{connection['addr'][1]}"
+                }
+                online_users.append(user_info)
         
         # Envia a lista como JSON
         users_data = json.dumps(online_users)
         conn.send(f"online_users={users_data}".encode(FORMAT))
-        print(f"[Lista de Usuários] Enviada para {client_connection['name']} - {len(online_users)} usuários online")
+        print(f"[Lista de Usuários] Enviada para {client_connection['name']} - {len(online_users)} outros usuários online")
         
     except Exception as e:
         print(f"Erro ao enviar lista de usuários para {client_connection['name']}: {e}")
@@ -117,16 +126,42 @@ def handle_clients(conn, addr):
 
             if message["type"] == "name":
                 name = message["message"]
+                
+                # CORREÇÃO: Verificar se o nome já existe
+                if name_already_exists(name):
+                    error_msg = f"❌ Nome '{name}' já está sendo usado! Escolha outro nome."
+                    conn.send(f"msg=[Servidor]: {error_msg}".encode(FORMAT))
+                    # Solicitar novo nome
+                    conn.send(f"msg=[Servidor]: Digite um novo nome:".encode(FORMAT))
+                    continue
+                
                 user_conn = {"conn": conn, "addr": addr, "name": name}
                 connections.append(user_conn)
                 print(f"[Nome definido] {name} conectado de {addr}")
+                
+                # Enviar mensagem de boas-vindas
+                welcome_msg = f"✅ Bem-vindo ao chat, {name}!"
+                conn.send(f"msg=[Servidor]: {welcome_msg}".encode(FORMAT))
+                
                 view_global_history(user_conn)
 
             elif message["type"] == "online_usr":
+                # CORREÇÃO: Verificar se o usuário já se registrou
+                if user_conn is None:
+                    error_msg = "❌ Você precisa definir um nome primeiro!"
+                    conn.send(f"msg=[Servidor]: {error_msg}".encode(FORMAT))
+                    continue
+                    
                 # Envia a lista de usuários online
                 send_online_users_list(user_conn)
 
             elif message["type"] == "msg":
+                # CORREÇÃO: Verificar se o usuário já se registrou
+                if user_conn is None:
+                    error_msg = "❌ Você precisa definir um nome primeiro!"
+                    conn.send(f"msg=[Servidor]: {error_msg}".encode(FORMAT))
+                    continue
+                    
                 if message["control"] == "4all":
                     new_message = {
                         "sender": user_conn["name"],
@@ -139,16 +174,16 @@ def handle_clients(conn, addr):
                     send_message_to_all(user_conn)
                 else:
                     destination = message["control"]
-                    new_message = {
-                        "sender": user_conn["name"],
-                        "destination": destination,
-                        "type": "msg",
-                        "content": message["message"]
-                    }
-                    private_messages.append(new_message)
-                    print(f"[Mensagem Privada] {user_conn['name']} -> {destination}: {message['message'][:50]}...")
                     dest_conn = search_name_in_connections(destination)
                     if dest_conn:
+                        new_message = {
+                            "sender": user_conn["name"],
+                            "destination": destination,
+                            "type": "msg",
+                            "content": message["message"]
+                        }
+                        private_messages.append(new_message)
+                        print(f"[Mensagem Privada] {user_conn['name']} -> {destination}: {message['message'][:50]}...")
                         send_message_to_user(user_conn, dest_conn, is_private=True)
                     else:
                         # Send error message to sender
@@ -156,6 +191,12 @@ def handle_clients(conn, addr):
                         conn.send(f"msg=[Servidor]: {error_msg}".encode(FORMAT))
 
             elif message["type"] == "file":
+                # CORREÇÃO: Verificar se o usuário já se registrou
+                if user_conn is None:
+                    error_msg = "❌ Você precisa definir um nome primeiro!"
+                    conn.send(f"msg=[Servidor]: {error_msg}".encode(FORMAT))
+                    continue
+                    
                 destination = message["control"]
                 filename = message.get("filename", "arquivo_recebido")
                 file_data = message["message"]
@@ -179,10 +220,10 @@ def handle_clients(conn, addr):
                     print(f"[Arquivo Global] {user_conn['name']}: {filename}")
                     send_message_to_all(user_conn)
                 else:
-                    private_messages.append(new_message)
-                    print(f"[Arquivo Privado] {user_conn['name']} -> {destination}: {filename}")
                     dest_conn = search_name_in_connections(destination)
                     if dest_conn:
+                        private_messages.append(new_message)
+                        print(f"[Arquivo Privado] {user_conn['name']} -> {destination}: {filename}")
                         send_message_to_user(user_conn, dest_conn, is_private=True)
                     else:
                         # Send error message to sender
@@ -201,6 +242,15 @@ def handle_clients(conn, addr):
         connections.remove(user_conn)
         print(f"[Desconexão] {user_conn['name']} ({addr}) desconectado")
         print(f"[Conexões ativas]: {len(connections)}")
+    else:
+        # Remove connection even if user_conn wasn't created (name not set)
+        for i, conn_data in enumerate(connections):
+            if conn_data["conn"] == conn:
+                connections.pop(i)
+                print(f"[Desconexão] Usuário não identificado ({addr}) desconectado")
+                print(f"[Conexões ativas]: {len(connections)}")
+                break
+    
     conn.close()
 
 def start():

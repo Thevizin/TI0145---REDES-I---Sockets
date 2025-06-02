@@ -21,6 +21,8 @@ client.connect(ADDR)
 input_lock = threading.Lock()
 waiting_for_file_decision = False
 pending_file_data = None
+name_registered = False  # CORREÇÃO: Controle para saber se o nome foi aceito
+waiting_for_name = False  # CORREÇÃO: Controle para reenvio de nome
 
 def safe_input(prompt):
     """Thread-safe input that respects the lock"""
@@ -32,13 +34,13 @@ def display_online_users(users_data):
     try:
         users = json.loads(users_data)
         print("\n" + "="*50)
-        print("👥 USUÁRIOS ONLINE")
+        print("👥 USUÁRIOS ONLINE (OUTROS USUÁRIOS)")
         print("="*50)
         
         if not users:
-            print("❌ Nenhum usuário online no momento.")
+            print("❌ Nenhum outro usuário online no momento.")
         else:
-            print(f"📊 Total de usuários online: {len(users)}")
+            print(f"📊 Total de outros usuários online: {len(users)}")
             print("-"*50)
             
             for i, user in enumerate(users, 1):
@@ -54,7 +56,7 @@ def display_online_users(users_data):
         print(f"❌ Erro inesperado ao exibir usuários: {e}")
 
 def handle_messages():
-    global waiting_for_file_decision, pending_file_data
+    global waiting_for_file_decision, pending_file_data, name_registered, waiting_for_name
     
     while True:
         try:
@@ -63,7 +65,20 @@ def handle_messages():
                 key, value = msg.split("=", 1)
                 
                 if key == "msg":
-                    print(f"\n💬 {value}")
+                    # CORREÇÃO: Verificar se é mensagem do servidor sobre nome duplicado
+                    if "[Servidor]:" in value and "já está sendo usado" in value:
+                        waiting_for_name = True
+                        name_registered = False
+                        print(f"\n💬 {value}")
+                    elif "[Servidor]:" in value and "Bem-vindo ao chat" in value:
+                        name_registered = True
+                        waiting_for_name = False
+                        print(f"\n💬 {value}")
+                    elif "[Servidor]:" in value and "Digite um novo nome:" in value:
+                        print(f"\n💬 {value}")
+                        # Não fazer nada aqui, deixar o loop principal tratar
+                    else:
+                        print(f"\n💬 {value}")
                     
                 elif key == "online_users":
                     # Trata a resposta da lista de usuários online
@@ -201,12 +216,32 @@ def send_private_message():
     send(message_formatted)
 
 def send_name():
-    name = safe_input("Digite seu nome: ")
-    message_formatted = {"type": "name", "control": "dontcare", "message": name}
-    send(message_formatted)
+    """CORREÇÃO: Função melhorada para lidar com nomes duplicados"""
+    global name_registered, waiting_for_name
+    
+    while not name_registered:
+        if waiting_for_name:
+            name = safe_input("Digite um novo nome: ")
+        else:
+            name = safe_input("Digite seu nome: ")
+        
+        message_formatted = {"type": "name", "control": "dontcare", "message": name}
+        send(message_formatted)
+        
+        # Aguardar resposta do servidor por um tempo
+        time.sleep(1)
+        
+        # Se ainda não foi registrado e não está esperando novo nome, houve erro
+        if not name_registered and not waiting_for_name:
+            print("❌ Erro de conexão. Tentando novamente...")
+            continue
 
 def receive_online_users():
     """Solicita a lista de usuários online do servidor"""
+    if not name_registered:
+        print("❌ Você precisa definir um nome primeiro!")
+        return
+        
     print("⏳ Buscando usuários online...")
     message_formatted = {"type": "online_usr", "control": "dontcare", "message": "dontcare"}
     send(message_formatted)
@@ -293,10 +328,15 @@ def capture_message():
             return None, False, None
 
 def start_sending():
-    global waiting_for_file_decision
+    global waiting_for_file_decision, name_registered
     
     print("\n🎉 Bem-vindo ao Chat!")
     send_name()
+    
+    # Aguardar confirmação do nome
+    while not name_registered:
+        time.sleep(0.1)
+    
     print("\n" + "="*50)
     print("📋 MENU PRINCIPAL")
     print("="*50)
