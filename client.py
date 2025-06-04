@@ -9,7 +9,35 @@ import sys
 import platform
 import time
 
-SERVER_IP = socket.gethostbyname(socket.gethostname())
+def discover_server(timeout=5):
+    """Automatically discover the chat server on the local network"""
+    print("🔍 Procurando servidor na rede local...")
+    
+    # Create UDP socket for broadcast
+    discover_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    discover_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    discover_socket.settimeout(timeout)
+    
+    try:
+        # Send broadcast message
+        discover_socket.sendto(b"CHAT_DISCOVER", ('<broadcast>', 5051))
+        
+        # Wait for server response
+        data, addr = discover_socket.recvfrom(1024)
+        if data == b"CHAT_SERVER":
+            server_ip = addr[0]
+            print(f"✅ Servidor encontrado: {server_ip}")
+            return server_ip
+    except socket.timeout:
+        print("❌ Nenhum servidor encontrado automaticamente.")
+    except Exception as e:
+        print(f"❌ Erro na descoberta: {e}")
+    finally:
+        discover_socket.close()
+    
+    return None
+
+SERVER_IP = discover_server()
 PORT = 5050
 ADDR = (SERVER_IP, PORT)
 FORMAT = 'utf-8'

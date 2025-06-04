@@ -5,8 +5,29 @@ import threading
 import time
 import json
 
+def handle_discovery():
+    """Handle automatic server discovery"""
+    discover_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    discover_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    discover_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    discover_socket.bind(('', 5051))
+    
+    def discovery_loop():
+        while True:
+            try:
+                data, addr = discover_socket.recvfrom(1024)
+                if data == b"CHAT_DISCOVER":
+                    print(f"[Descoberta] Requisição de {addr[0]}")
+                    discover_socket.sendto(b"CHAT_SERVER", addr)
+            except Exception as e:
+                print(f"[Erro Descoberta] {e}")
+                break
+    
+    # Start discovery handler in background
+    discovery_thread = threading.Thread(target=discovery_loop, daemon=True)
+    discovery_thread.start()
 
-SERVER_IP = socket.gethostbyname(socket.gethostname())
+SERVER_IP = "0.0.0.0" 
 PORT = 5050
 ADDR = (SERVER_IP, PORT)
 FORMAT = 'utf-8'
@@ -255,6 +276,7 @@ def handle_clients(conn, addr):
 
 def start():
     print("[Servidor] Iniciando...")
+    handle_discovery()
     server.listen()
     print(f"[Servidor] Ouvindo em {SERVER_IP}:{PORT}")
     print(f"[Servidor] Pronto para receber conexões!")
