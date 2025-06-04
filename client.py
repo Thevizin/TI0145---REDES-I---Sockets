@@ -8,6 +8,8 @@ import json
 import sys
 import platform
 import time
+from diffie_Hellman_utils import generate_keys, compute_shared_secret
+
 
 SERVER_IP = socket.gethostbyname(socket.gethostname())
 PORT = 5050
@@ -23,6 +25,9 @@ waiting_for_file_decision = False
 pending_file_data = None
 name_registered = False  # CORREÇÃO: Controle para saber se o nome foi aceito
 waiting_for_name = False  # CORREÇÃO: Controle para reenvio de nome
+
+private_key, public_key = generate_keys()
+shared_secret = None
 
 def safe_input(prompt):
     """Thread-safe input that respects the lock"""
@@ -79,7 +84,7 @@ def handle_messages():
                         # Não fazer nada aqui, deixar o loop principal tratar
                     else:
                         print(f"\n💬 {value}")
-                    
+                        
                 elif key == "online_users":
                     # Trata a resposta da lista de usuários online
                     display_online_users(value)
@@ -331,6 +336,8 @@ def start_sending():
     global waiting_for_file_decision, name_registered
     
     print("\n🎉 Bem-vindo ao Chat!")
+    if (private_key and public_key):
+        print(f"🔐 Chaves Diffie-Hellman geradas com sucesso: {private_key}, {public_key}")
     send_name()
     
     # Aguardar confirmação do nome

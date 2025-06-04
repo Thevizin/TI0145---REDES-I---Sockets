@@ -4,6 +4,7 @@ import socket
 import threading
 import time
 import json
+from diffie_Hellman_utils import generate_keys, compute_shared_secret
 
 
 SERVER_IP = socket.gethostbyname(socket.gethostname())
@@ -13,6 +14,7 @@ FORMAT = 'utf-8'
 
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.bind(ADDR)
+server.listen()
 
 connections = []
 global_messages = []
@@ -114,6 +116,9 @@ def handle_clients(conn, addr):
     print(f"[Conexão] Novo usuário conectado: {addr}")
     global connections
 
+    # Remove the problematic Diffie-Hellman implementation for now
+    # This can be properly implemented later with coordinated client-server protocol
+    
     user_conn = None
 
     while True:
