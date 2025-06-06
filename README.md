@@ -175,6 +175,7 @@ if size > 10 * 1024 * 1024:  # 10MB
 - Digite o nome exato do usuário (case-sensitive)
 - Use a opção "Listar usuários online" para ver nomes disponíveis
 
+<<<<<<< Updated upstream
 ## 🤝 Contribuindo
 
 1. Faça um fork do projeto
@@ -182,6 +183,51 @@ if size > 10 * 1024 * 1024:  # 10MB
 3. Commit suas mudanças (`git commit -am 'Adiciona nova funcionalidade'`)
 4. Push para a branch (`git push origin feature/nova-funcionalidade`)
 5. Abra um Pull Request
+=======
+### Problemas do AI Bot
+
+**"❌ Ollama não está rodando"**
+- Execute `ollama serve` em um terminal separado
+- Verifique se a porta 11434 não está bloqueada
+
+**"❌ Modelo não encontrado"**
+- Liste modelos: `ollama list`
+- Baixe o modelo: `ollama pull qwen2.5:4b`
+
+**"❌ Timeout ao aguardar resposta"**
+- Modelo pode estar sendo carregado pela primeira vez (aguarde)
+- Tente um modelo menor como `qwen2.5:4b`
+- Verifique recursos do sistema (RAM, CPU)
+
+**Bot não responde**
+- Verifique se o bot está online: liste usuários (opção 3)
+- Certifique-se de enviar mensagem privada para "ChatBot" (exato)
+- Verifique logs do AI Bot no terminal
+
+**"❌ Não foi possível conectar ao Ollama"**
+- Verifique se Ollama está instalado: `ollama --version`
+- Reinicie o serviço: `ollama serve`
+- Teste manualmente: `curl http://localhost:11434/api/tags`
+
+## 🎯 Fluxo de Funcionamento
+
+### Descoberta Automática
+1. Cliente envia broadcast UDP "CHAT_DISCOVER" na porta 5051
+2. Servidor responde "CHAT_SERVER" com seu IP
+3. Cliente conecta no IP descoberto na porta 5050
+
+### Comunicação Chat
+1. Cliente envia nome em JSON: `{"type": "name", "message": "João"}`
+2. Servidor valida e confirma registro
+3. Cliente pode enviar mensagens, arquivos ou listar usuários
+4. Servidor roteia mensagens baseado no campo "control"
+
+### AI Bot
+1. AI Bot conecta como cliente normal com nome "ChatBot"
+2. Monitora mensagens privadas direcionadas a ele
+3. Extrai pergunta e envia para Ollama API local
+4. Retorna resposta formatada para o remetente
+>>>>>>> Stashed changes
 
 ## 📜 Licença
 
