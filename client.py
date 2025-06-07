@@ -8,6 +8,10 @@ import json
 import sys
 import platform
 import time
+from tkinter import *
+from tkinter import scrolledtext, messagebox, filedialog, simpledialog
+from tkinter import ttk
+import datetime
 
 def discover_server(timeout=5):
     """
@@ -42,384 +46,315 @@ def discover_server(timeout=5):
     
     return None
 
-SERVER_IP = discover_server() # Descobre servidor automaticamente
-PORT = 5050
-ADDR = (SERVER_IP, PORT)
-FORMAT = 'utf-8'
-
-client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-client.connect(ADDR)
-
-# Controles de estado para evitar conflitos de entrada
-input_lock = threading.Lock() # Mutex para input thread-safe
-name_registered = False  # Controle para saber se o nome foi aceito
-waiting_for_name = False  # Controle para reenvio de nome
-
-# Sistema de Caixa Postal
-mailbox = []  # Lista de arquivos recebidos
-mailbox_lock = threading.Lock()  # Mutex para acesso thread-safe à caixa postal
-
-def safe_input(prompt):
+class ChatClientGUI:
     """
-    Input thread-safe que respeita o mutex
-    Evita conflitos quando multiplas threads tentam capturar entrada
+    Classe principal da interface gráfica do cliente de chat
     """
-    with input_lock:
-        return input(prompt)
-
-def display_online_users(users_data):
-    """
-    Exibe a lista de usuarios online de forma formatada
-    Recebe dados JSON do servidor e apresenta em tabela organizada
-    """
-    try:
-        users = json.loads(users_data)
-        print("\n" + "="*50)
-        print("👥 USUÁRIOS ONLINE (OUTROS USUÁRIOS)")
-        print("="*50)
+    def __init__(self):
+        self.window = None
+        self.chat_text = None
+        self.message_entry = None
+        self.users_listbox = None
+        self.status_label = None
+        self.send_button = None
+        self.file_button = None
+        self.private_button = None
+        self.refresh_button = None
         
-        if not users:
-            print("❌ Nenhum outro usuário online no momento.")
-        else:
-            print(f"📊 Total de outros usuários online: {len(users)}")
-            print("-"*50)
+        # Controles de estado
+        self.running = True
+        self.name_registered = False
+        self.waiting_for_name = False
+        self.current_user = ""
+        self.online_users = []
+        
+        # Dados de arquivo pendente
+        self.waiting_for_file_decision = False
+        self.pending_file_data = None
+        
+        # Socket do cliente
+        self.client = None
+        
+        # Inicializar GUI
+        self.create_gui()
+        
+    def create_gui(self):
+        """Cria toda a interface gráfica"""
+        self.window = Tk()
+        self.window.title("💬 Chat Client")
+        self.window.geometry("900x700")
+        self.window.configure(bg="#2c3e50")
+        self.window.protocol("WM_DELETE_WINDOW", self.on_closing)
+        
+        # Título principal
+        title_frame = Frame(self.window, bg="#2c3e50")
+        title_frame.pack(pady=10, fill="x")
+        
+        title = Label(title_frame, text="💬 CLIENTE DE CHAT", 
+                     font=("Arial", 18, "bold"), 
+                     bg="#2c3e50", fg="#ecf0f1")
+        title.pack()
+        
+        # Status de conexão
+        self.status_label = Label(title_frame, text="🔴 Desconectado", 
+                                 font=("Arial", 12), 
+                                 bg="#2c3e50", fg="#e74c3c")
+        self.status_label.pack(pady=5)
+        
+        # Frame principal (dividido em duas colunas)
+        main_frame = Frame(self.window, bg="#2c3e50")
+        main_frame.pack(pady=10, padx=20, fill="both", expand=True)
+        
+        # Coluna esquerda - Chat
+        chat_frame = Frame(main_frame, bg="#34495e", relief="raised", bd=2)
+        chat_frame.pack(side=LEFT, fill="both", expand=True, padx=(0, 10))
+        
+        # Área de chat
+        chat_label = Label(chat_frame, text="💬 CHAT", 
+                          font=("Arial", 12, "bold"), 
+                          bg="#34495e", fg="#ecf0f1")
+        chat_label.pack(pady=10)
+        
+        self.chat_text = scrolledtext.ScrolledText(
+            chat_frame, 
+            height=20, 
+            width=50,
+            font=("Consolas", 10),
+            bg="#1e1e1e", 
+            fg="#ecf0f1",
+            insertbackground="#ecf0f1",
+            selectbackground="#404040",
+            wrap=WORD,
+            state=DISABLED
+        )
+        self.chat_text.pack(pady=10, padx=10, fill="both", expand=True)
+        
+        # Frame para entrada de mensagem
+        input_frame = Frame(chat_frame, bg="#34495e")
+        input_frame.pack(pady=10, padx=10, fill="x")
+        
+        self.message_entry = Entry(input_frame, 
+                                  font=("Arial", 11),
+                                  bg="#ecf0f1", 
+                                  fg="#2c3e50",
+                                  relief="flat")
+        self.message_entry.pack(side=LEFT, fill="x", expand=True, padx=(0, 5))
+        self.message_entry.bind("<Return>", self.send_message_event)
+        self.message_entry.bind("<Control-Return>", self.send_private_message_event)
+        
+        # Botões de envio
+        buttons_frame = Frame(input_frame, bg="#34495e")
+        buttons_frame.pack(side=RIGHT)
+        
+        self.send_button = Button(buttons_frame, text="📤", 
+                                 command=self.send_message,
+                                 font=("Arial", 10, "bold"),
+                                 bg="#27ae60", fg="white",
+                                 relief="flat", width=4,
+                                 state=DISABLED)
+        self.send_button.pack(side=LEFT, padx=2)
+        
+        self.file_button = Button(buttons_frame, text="📎", 
+                                 command=self.send_file,
+                                 font=("Arial", 10, "bold"),
+                                 bg="#3498db", fg="white",
+                                 relief="flat", width=4,
+                                 state=DISABLED)
+        self.file_button.pack(side=LEFT, padx=2)
+        
+        self.private_button = Button(buttons_frame, text="🔒", 
+                                    command=self.send_private_message,
+                                    font=("Arial", 10, "bold"),
+                                    bg="#9b59b6", fg="white",
+                                    relief="flat", width=4,
+                                    state=DISABLED)
+        self.private_button.pack(side=LEFT, padx=2)
+        
+        # Coluna direita - Usuários online
+        users_frame = Frame(main_frame, bg="#34495e", relief="raised", bd=2)
+        users_frame.pack(side=RIGHT, fill="y", padx=(10, 0))
+        
+        users_label = Label(users_frame, text="👥 USUÁRIOS ONLINE", 
+                           font=("Arial", 12, "bold"), 
+                           bg="#34495e", fg="#ecf0f1")
+        users_label.pack(pady=10)
+        
+        # Lista de usuários
+        listbox_frame = Frame(users_frame, bg="#34495e")
+        listbox_frame.pack(pady=10, padx=10, fill="both", expand=True)
+        
+        self.users_listbox = Listbox(listbox_frame,
+                                   font=("Arial", 10),
+                                   bg="#1e1e1e",
+                                   fg="#ecf0f1",
+                                   selectbackground="#3498db",
+                                   relief="flat",
+                                   width=25,
+                                   height=15)
+        self.users_listbox.pack(fill="both", expand=True)
+        self.users_listbox.bind("<Double-Button-1>", self.on_user_double_click)
+        
+        # Botão para atualizar lista
+        self.refresh_button = Button(users_frame, text="🔄 Atualizar", 
+                                   command=self.refresh_users,
+                                   font=("Arial", 10, "bold"),
+                                   bg="#f39c12", fg="white",
+                                   relief="flat",
+                                   state=DISABLED)
+        self.refresh_button.pack(pady=10)
+        
+        # Informações na parte inferior
+        info_frame = Frame(self.window, bg="#2c3e50")
+        info_frame.pack(pady=10, fill="x")
+        
+        info_text = Label(info_frame, 
+                         text="💡 Dicas: Enter = msg global | Ctrl+Enter = msg privada | Duplo-click = msg privada para usuário",
+                         font=("Arial", 9),
+                         bg="#2c3e50", fg="#95a5a6")
+        info_text.pack()
+        
+    def log_message(self, message, color="#ecf0f1"):
+        """Adiciona mensagem ao chat com timestamp e cor"""
+        if not self.running:
+            return
             
-            for i, user in enumerate(users, 1):
-                name = user.get('name', 'Desconhecido')
-                addr = user.get('addr', 'N/A')
-                print(f"{i:2d}. 👤 {name:<20} | 🌐 {addr}")
+        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        formatted_message = f"[{timestamp}] {message}\n"
         
-        print("="*50)
-        
-    except json.JSONDecodeError as e:
-        print(f"❌ Erro ao processar lista de usuários: {e}")
-    except Exception as e:
-        print(f"❌ Erro inesperado ao exibir usuários: {e}")
-
-def add_to_mailbox(sender, filename, b64data, file_size):
-    """
-    Adiciona um arquivo à caixa postal
-    """
-    with mailbox_lock:
-        file_entry = {
-            'sender': sender,
-            'filename': filename,
-            'b64data': b64data,
-            'file_size': file_size,
-            'timestamp': time.time()
-        }
-        mailbox.append(file_entry)
-        print(f"\n📧 Novo arquivo na caixa postal de {sender}: {filename}")
-
-def display_mailbox():
-    """
-    Exibe o conteúdo da caixa postal
-    """
-    with mailbox_lock:
-        if not mailbox:
-            print("\n📪 Caixa postal vazia.")
-            return
-        
-        print("\n" + "="*60)
-        print("📫 CAIXA POSTAL - ARQUIVOS RECEBIDOS")
-        print("="*60)
-        
-        for i, file_entry in enumerate(mailbox, 1):
-            sender = file_entry['sender']
-            filename = file_entry['filename']
-            file_size = file_entry['file_size']
-            timestamp = time.strftime('%d/%m/%Y %H:%M:%S', time.localtime(file_entry['timestamp']))
-            
-            print(f"{i:2d}. 📎 {filename}")
-            print(f"    👤 De: {sender}")
-            print(f"    📊 Tamanho: {file_size/1024:.1f}KB")
-            print(f"    🕒 Recebido: {timestamp}")
-            print("-" * 60)
-
-def manage_mailbox():
-    """
-    Gerencia a caixa postal - permite ver, baixar e deletar arquivos
-    """
-    while True:
-        display_mailbox()
-        
-        with mailbox_lock:
-            if not mailbox:
-                safe_input("\nPressione Enter para voltar ao menu...")
-                return
-        
-        print("\nOpções:")
-        print("1. 💾 Baixar arquivo")
-        print("2. 🗑️  Deletar arquivo")
-        print("3. 🔄 Atualizar lista")
-        print("4. ⬅️  Voltar ao menu")
-        
-        choice = safe_input("Escolha (1-4): ").strip()
-        
-        if choice == "1":
-            download_file_from_mailbox()
-        elif choice == "2":
-            delete_file_from_mailbox()
-        elif choice == "3":
-            continue  # Apenas atualiza a exibição
-        elif choice == "4":
-            break
-        else:
-            print("❌ Opção inválida! Digite apenas 1, 2, 3 ou 4.")
-
-def download_file_from_mailbox():
-    """
-    Baixa um arquivo específico da caixa postal
-    """
-    with mailbox_lock:
-        if not mailbox:
-            print("❌ Caixa postal vazia.")
-            return
-        
-        while True:
+        def _update():
             try:
-                file_num = int(safe_input(f"Digite o número do arquivo (1-{len(mailbox)}): "))
-                if 1 <= file_num <= len(mailbox):
-                    break
-                print(f"❌ Digite apenas números entre 1 e {len(mailbox)}")
-            except ValueError:
-                print("❌ Digite apenas números!")
-            except KeyboardInterrupt:
-                return
+                self.chat_text.config(state=NORMAL)
+                self.chat_text.insert(END, formatted_message)
+                self.chat_text.tag_add("color", "end-2l", "end-1l")
+                self.chat_text.tag_config("color", foreground=color)
+                self.chat_text.see(END)
+                self.chat_text.config(state=DISABLED)
+            except:
+                pass
         
-        file_entry = mailbox[file_num - 1]
-    
-    try:
-        # Criar diretório downloads se não existir
-        if not os.path.exists("downloads"):
-            os.makedirs("downloads")
-            print("📁 Diretório 'downloads' criado")
+        self.window.after(0, _update)
         
-        # Evitar sobrescrever arquivos
-        base_name = os.path.splitext(file_entry['filename'])[0]
-        extension = os.path.splitext(file_entry['filename'])[1]
-        counter = 1
-        new_filename = file_entry['filename']
-        
-        while os.path.exists(os.path.join("downloads", new_filename)):
-            new_filename = f"{base_name}_{counter}{extension}"
-            counter += 1
-        
-        filepath = os.path.join("downloads", new_filename)
-        
-        print("⏳ Baixando arquivo...")
-        with open(filepath, "wb") as f:
-            f.write(base64.b64decode(file_entry['b64data']))
-        
-        actual_size = os.path.getsize(filepath)
-        print(f"✅ Arquivo baixado com sucesso!")
-        print(f"📁 Local: {filepath}")
-        print(f"📊 Tamanho: {actual_size/1024:.1f}KB")
-        
-        # Perguntar se quer deletar da caixa postal
-        delete_choice = safe_input("Deletar arquivo da caixa postal? (s/n): ").lower()
-        if delete_choice in ['s', 'sim', 'y', 'yes']:
-            with mailbox_lock:
-                mailbox.pop(file_num - 1)
-            print("🗑️ Arquivo removido da caixa postal.")
-        
-    except Exception as e:
-        print(f"❌ Erro ao baixar arquivo: {e}")
-
-def delete_file_from_mailbox():
-    """
-    Deleta um arquivo específico da caixa postal
-    """
-    with mailbox_lock:
-        if not mailbox:
-            print("❌ Caixa postal vazia.")
-            return
-        
-        while True:
+    def update_status(self, status, color="#e74c3c"):
+        """Atualiza o status de conexão"""
+        def _update():
             try:
-                file_num = int(safe_input(f"Digite o número do arquivo (1-{len(mailbox)}): "))
-                if 1 <= file_num <= len(mailbox):
-                    break
-                print(f"❌ Digite apenas números entre 1 e {len(mailbox)}")
-            except ValueError:
-                print("❌ Digite apenas números!")
-            except KeyboardInterrupt:
-                return
+                self.status_label.config(text=status, fg=color)
+            except:
+                pass
         
-        file_entry = mailbox[file_num - 1]
-        filename = file_entry['filename']
-        sender = file_entry['sender']
+        self.window.after(0, _update)
         
-        confirm = safe_input(f"Confirma a exclusão de '{filename}' de {sender}? (s/n): ").lower()
-        if confirm in ['s', 'sim', 'y', 'yes']:
-            mailbox.pop(file_num - 1)
-            print(f"🗑️ Arquivo '{filename}' removido da caixa postal.")
-        else:
-            print("❌ Exclusão cancelada.")
-
-def get_mailbox_count():
-    """
-    Retorna o número de arquivos na caixa postal
-    """
-    with mailbox_lock:
-        return len(mailbox)
-
-def handle_messages():
-    """
-    Thread dedicada para receber e processar mensagens do servidor
-    Roda continuamente em background processando:
-    - msg: mensagens de texto
-    - online_users: lista de usuarios online
-    - file: arquivos recebidos (agora vai para caixa postal)
-    """
-    global name_registered, waiting_for_name
-    
-    while True:
+    def enable_controls(self, enabled=True):
+        """Habilita/desabilita controles da interface"""
+        state = NORMAL if enabled else DISABLED
+        
+        def _update():
+            try:
+                self.send_button.config(state=state)
+                self.file_button.config(state=state)
+                self.private_button.config(state=state)
+                self.refresh_button.config(state=state)
+                self.message_entry.config(state=state)
+            except:
+                pass
+        
+        self.window.after(0, _update)
+        
+    def update_users_list(self, users):
+        """Atualiza a lista de usuários online"""
+        self.online_users = users
+        
+        def _update():
+            try:
+                self.users_listbox.delete(0, END)
+                for user in users:
+                    name = user.get('name', 'Desconhecido')
+                    self.users_listbox.insert(END, f"👤 {name}")
+            except:
+                pass
+        
+        self.window.after(0, _update)
+        
+    def get_selected_user(self):
+        """Retorna o usuário selecionado na lista (sem o emoji)"""
         try:
-            msg = client.recv(2048 * 10).decode(FORMAT) # Buffer grande para arquivos
-            if msg:
-                key, value = msg.split("=", 1) # Separar tipo da mensagem do conteudo
-                
-                if key == "msg":
-                    # Verificar se é mensagem do servidor sobre nome duplicado
-                    if "[Servidor]:" in value and "já está sendo usado" in value:
-                        waiting_for_name = True
-                        name_registered = False
-                        print(f"\n💬 {value}")
-                    elif "[Servidor]:" in value and "Bem-vindo ao chat" in value:
-                        name_registered = True
-                        waiting_for_name = False
-                        print(f"\n💬 {value}")
-                    elif "[Servidor]:" in value and "Digite um novo nome:" in value:
-                        print(f"\n💬 {value}")
-                        # Não fazer nada aqui, deixar o loop principal tratar
-                    else:
-                        print(f"\n💬 {value}")
-                    
-                elif key == "online_users":
-                    # Trata a resposta da lista de usuários online
-                    display_online_users(value)
-                    
-                elif key == "file":
-                    # Formato: remetente||nome_arquivo||dados_base64
-                    parts = value.split("||", 2)
-                    if len(parts) == 3:
-                        sender, filename, b64data = parts
-                        file_size = (len(b64data) * 3) // 4  # Tamanho aproximado em bytes
-                        
-                        # Adicionar à caixa postal
-                        add_to_mailbox(sender, filename, b64data, file_size)
-                        
-                    else:
-                        # Compatibilidade com formato antigo
-                        try:
-                            filename, b64data = value.split("||", 1)
-                            file_size = (len(b64data) * 3) // 4
-                            add_to_mailbox("Desconhecido", filename, b64data, file_size)
-                        except:
-                            print("❌ Erro ao processar arquivo (formato incompatível)")
-                            
+            selection = self.users_listbox.curselection()
+            if selection:
+                user_text = self.users_listbox.get(selection[0])
+                return user_text.replace("👤 ", "")
+        except:
+            pass
+        return None
+        
+    def on_user_double_click(self, event):
+        """Evento de duplo-click em usuário para mensagem privada"""
+        user = self.get_selected_user()
+        if user:
+            self.send_private_message(target_user=user)
+            
+    def send_message_event(self, event):
+        """Evento de Enter para enviar mensagem"""
+        self.send_message()
+        
+    def send_private_message_event(self, event):
+        """Evento de Ctrl+Enter para mensagem privada"""
+        self.send_private_message()
+        
+    def send_message(self):
+        """Envia mensagem global"""
+        if not self.name_registered:
+            messagebox.showwarning("Aviso", "Configure seu nome primeiro!")
+            return
+            
+        message = self.message_entry.get().strip()
+        if not message:
+            return
+            
+        try:
+            message_formatted = {"type": "msg", "control": "4all", "message": message}
+            self.client.send(json.dumps(message_formatted).encode('utf-8'))
+            self.message_entry.delete(0, END)
+            self.log_message(f"[Você → todos]: {message}", "#27ae60")
         except Exception as e:
-            print(f"❌ Erro ao receber mensagem: {e}")
-            break
-
-def send(message):
-    """
-    Envia mensagem JSON para o servidor
-    Converte dicionario Python para JSON e envia via socket
-    """
-    try:
-        client.send(json.dumps(message).encode(FORMAT))
-    except Exception as e:
-        print(f"Erro ao enviar: {e}")
-
-def send_global_message():
-    """
-    Captura e envia mensagem global (para todos os usuarios)
-    Pode ser texto ou arquivo dependendo da escolha do usuario
-    """
-    message, is_text, filename = capture_message()
-    if message is None:
-        return
-    if is_text:
-        message_formatted = {"type": "msg", "control": "4all", "message": message}
-    else:
-        message_formatted = {"type": "file", "control": "4all", "message": message, "filename": filename}
-    send(message_formatted)
-
-def send_private_message():
-    """
-    Captura e envia mensagem privada para usuario especifico
-    Solicita nome do destinatario e pode ser texto ou arquivo
-    """
-    destination = safe_input("Nome do destinatário: ")
-    message, is_text, filename = capture_message()
-    if message is None:
-        return
-    if is_text:
-        message_formatted = {"type": "msg", "control": destination, "message": message}
-    else:
-        message_formatted = {"type": "file", "control": destination, "message": message, "filename": filename}
-    send(message_formatted)
-
-def send_name():
-    """
-    Funcao melhorada para lidar com nomes duplicados
-    Continua solicitando novo nome ate que seja aceito pelo servidor
-    """
-    global name_registered, waiting_for_name
-    
-    while not name_registered:
-        if waiting_for_name:
-            name = safe_input("Digite um novo nome: ")
-        else:
-            name = safe_input("Digite seu nome: ")
-        
-        message_formatted = {"type": "name", "control": "dontcare", "message": name}
-        send(message_formatted)
-        
-        # Aguardar resposta do servidor por um tempo
-        time.sleep(1)
-        
-        # Se ainda não foi registrado e não está esperando novo nome, houve erro
-        if not name_registered and not waiting_for_name:
-            print("❌ Erro de conexão. Tentando novamente...")
-            continue
-
-def receive_online_users():
-    """
-    Solicita a lista de usuarios online do servidor
-    Envia requisicao especial que sera processada pelo servidor
-    """
-    if not name_registered:
-        print("❌ Você precisa definir um nome primeiro!")
-        return
-        
-    print("⏳ Buscando usuários online...")
-    message_formatted = {"type": "online_usr", "control": "dontcare", "message": "dontcare"}
-    send(message_formatted)
-    # A resposta será tratada automaticamente pela função handle_messages()
-    time.sleep(0.5)  # Pequena pausa para dar tempo da resposta chegar
-
-def select_file():
-    """
-    Selecao de arquivo usando interface grafica Tkinter
-    Abre dialog para usuario escolher arquivo do sistema
-    """
-    try:
-        import tkinter as tk
-        from tkinter import filedialog
-        
-        # Criar janela principal invisivel
-        root = tk.Tk()
-        root.withdraw()  # Esconder janela principal
-        root.wm_attributes('-topmost', 1)  # Colocar na frente
-        
-        # Forcar foco
-        if platform.system() == "Windows":
-            root.wm_attributes('-alpha', 0.0)  # Transparente no Windows
-        
-        # Abrir dialog
+            messagebox.showerror("Erro", f"Erro ao enviar mensagem: {e}")
+            
+    def send_private_message(self, target_user=None):
+        """Envia mensagem privada"""
+        if not self.name_registered:
+            messagebox.showwarning("Aviso", "Configure seu nome primeiro!")
+            return
+            
+        # Determinar destinatário
+        if target_user is None:
+            target_user = self.get_selected_user()
+            
+        if target_user is None:
+            # Solicitar nome do usuário
+            target_user = simpledialog.askstring("Mensagem Privada", 
+                                               "Digite o nome do destinatário:")
+            if not target_user:
+                return
+                
+        # Solicitar mensagem
+        message = simpledialog.askstring("Mensagem Privada", 
+                                       f"Mensagem para {target_user}:")
+        if not message:
+            return
+            
+        try:
+            message_formatted = {"type": "msg", "control": target_user, "message": message}
+            self.client.send(json.dumps(message_formatted).encode('utf-8'))
+            self.log_message(f"[Você → {target_user}]: {message}", "#9b59b6")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Erro ao enviar mensagem privada: {e}")
+            
+    def send_file(self):
+        """Envia arquivo"""
+        if not self.name_registered:
+            messagebox.showwarning("Aviso", "Configure seu nome primeiro!")
+            return
+            
+        # Selecionar arquivo
         filepath = filedialog.askopenfilename(
             title="Selecione o arquivo para enviar",
             filetypes=[
@@ -430,155 +365,269 @@ def select_file():
             ]
         )
         
-        # Destruir janela
-        root.destroy()
-        
-        return filepath if filepath else None
-        
-    except Exception as e:
-        print(f"❌ Erro ao abrir seletor de arquivos: {e}")
-        return None
-
-def capture_message():
-    """
-    Captura mensagem do usuario (texto ou arquivo)
-    Apresenta menu para escolher tipo de mensagem
-    Para texto: captura entrada do teclado
-    Para arquivo: abre seletor de arquivo e codifica em base64
-    
-    Returns:
-        tuple: (conteudo, is_text, filename)
-        - conteudo: texto da mensagem ou dados base64 do arquivo
-        - is_text: True para texto, False para arquivo
-        - filename: nome do arquivo (None para texto)
-    """
-    print("\nTipo de mensagem:")
-    print("1. 💬 Texto")
-    print("2. 📎 Arquivo")
-    
-    # Loop ate escolha valida
-    while True:
-        control = safe_input("Escolha (1-2): ").strip()
-        if control in ['1', '2']:
-            break
-        print("❌ Digite apenas 1 ou 2")
-    
-    if control == "1":
-        # Capturar mensagem de texto
-        message = safe_input("\n✏️  Digite sua mensagem: ")
-        return message, True, None
-        
-    elif control == "2":
-        # Capturar arquivo
-        print("\n📎 ENVIO DE ARQUIVO")
-        path = select_file()
-        # Verificar se arquivo foi selecionado e existe
-        if not path or not os.path.isfile(path):
-            print("❌ Arquivo não encontrado ou seleção cancelada.")
-            return None, False, None
+        if not filepath or not os.path.isfile(filepath):
+            return
             
-        # Verificar tamanho do arquivo 
-        size = os.path.getsize(path)
+        # Verificar tamanho
+        size = os.path.getsize(filepath)
         if size > 10 * 1024 * 1024:  # 10MB
-            print(f"⚠️  Arquivo muito grande ({size/1024/1024:.1f}MB). Máximo recomendado: 10MB")
-            if safe_input("Continuar mesmo assim? (s/n): ").lower() != 's':
-                return None, False, None
-        
-        # Extrair nome do arquivo
-        filename = os.path.basename(path)
-        print(f"\n📤 Preparando envio...")
-        print(f"📄 Arquivo: {filename}")
-        print(f"📊 Tamanho: {size/1024:.1f}KB")
+            if not messagebox.askyesno("Arquivo Grande", 
+                                     f"Arquivo muito grande ({size/1024/1024:.1f}MB).\n"
+                                     "Máximo recomendado: 10MB\n"
+                                     "Continuar mesmo assim?"):
+                return
+                
+        # Perguntar se é global ou privado
+        choice = messagebox.askyesnocancel("Destino do Arquivo", 
+                                         "Enviar para todos? (Não = mensagem privada)")
+        if choice is None:  # Cancelado
+            return
+            
+        filename = os.path.basename(filepath)
         
         try:
-            # Codificar arquivo em base64
-            print("⏳ Codificando arquivo...")
-            with open(path, "rb") as file:
-                data = base64.b64encode(file.read()).decode(FORMAT)
-            print("✅ Arquivo pronto para envio!")
-            return data, False, filename
+            # Codificar arquivo
+            with open(filepath, "rb") as file:
+                data = base64.b64encode(file.read()).decode('utf-8')
+                
+            if choice:  # Global
+                message_formatted = {"type": "file", "control": "4all", 
+                                   "message": data, "filename": filename}
+                self.log_message(f"[Você → todos]: 📎 {filename} ({size/1024:.1f}KB)", "#3498db")
+            else:  # Privado
+                target_user = self.get_selected_user()
+                if target_user is None:
+                    target_user = simpledialog.askstring("Arquivo Privado", 
+                                                       "Digite o nome do destinatário:")
+                    if not target_user:
+                        return
+                        
+                message_formatted = {"type": "file", "control": target_user, 
+                                   "message": data, "filename": filename}
+                self.log_message(f"[Você → {target_user}]: 📎 {filename} ({size/1024:.1f}KB)", "#3498db")
+                
+            self.client.send(json.dumps(message_formatted).encode('utf-8'))
+            
         except Exception as e:
-            print(f"❌ Erro ao processar arquivo: {e}")
-            return None, False, None
-
-def start_sending():
-    """
-    Funcao principal do cliente - gerencia todo o fluxo de interacao
-    1. Solicita nome do usuario
-    2. Aguarda confirmacao do servidor
-    3. Apresenta menu principal com opcoes (incluindo caixa postal)
-    """
-    global name_registered
-    
-    print("\n🎉 Bem-vindo ao Chat!")
-    send_name()
-    
-    # Aguardar confirmacao do nome pelo servidor
-    while not name_registered:
-        time.sleep(0.1)
-    
-    print("\n" + "="*50)
-    print("📋 MENU PRINCIPAL")
-    print("="*50)
-    
-    # Loop principal do menu
-    while True:
-        # Mostrar contador de arquivos na caixa postal
-        mailbox_count = get_mailbox_count()
-        mailbox_indicator = f" ({mailbox_count} arquivos)" if mailbox_count > 0 else ""
+            messagebox.showerror("Erro", f"Erro ao enviar arquivo: {e}")
+            
+    def refresh_users(self):
+        """Solicita lista atualizada de usuários"""
+        if not self.name_registered:
+            return
+            
+        try:
+            message_formatted = {"type": "online_usr", "control": "dontcare", "message": "dontcare"}
+            self.client.send(json.dumps(message_formatted).encode('utf-8'))
+        except Exception as e:
+            messagebox.showerror("Erro", f"Erro ao buscar usuários: {e}")
+            
+    def process_file_offer(self, sender, filename, b64data, file_size):
+        """Processa oferta de arquivo recebido"""
+        result = messagebox.askyesnocancel("Arquivo Recebido", 
+                                         f"📎 Arquivo recebido de {sender}\n"
+                                         f"📄 Nome: {filename}\n"
+                                         f"📊 Tamanho: {file_size/1024:.1f}KB\n\n"
+                                         f"Deseja baixar o arquivo?")
         
-        # Apresentar opcoes do menu
-        print("\nEscolha uma opção:")
-        print("1. 🌐 Mensagem global (todos)")
-        print("2. 🔒 Mensagem privada")
-        print("3. 👥 Listar usuários online")
-        print(f"4. 📫 Caixa postal{mailbox_indicator}")
-        print("5. ❌ Sair")
-        print("-"*30)
-        
-        option = safe_input("Escolha (1-5): ").strip()
-        
-        # Processar opcao selecionada
-        if option == "1":
-            print("\n📢 MENSAGEM GLOBAL")
-            send_global_message()
-        elif option == "2":
-            print("\n🔒 MENSAGEM PRIVADA")
-            send_private_message()
-        elif option == "3":
-            print("\n👥 USUÁRIOS ONLINE")
-            receive_online_users()
-        elif option == "4":
-            print("\n📫 CAIXA POSTAL")
-            manage_mailbox()
-        elif option == "5":
-            print("\n👋 Saindo do chat...")
-            break
+        if result:  # Sim - baixar
+            try:
+                # Criar diretório downloads se não existir
+                if not os.path.exists("downloads"):
+                    os.makedirs("downloads")
+                    
+                # Evitar sobrescrever arquivos
+                base_name = os.path.splitext(filename)[0]
+                extension = os.path.splitext(filename)[1]
+                counter = 1
+                new_filename = filename
+                
+                while os.path.exists(os.path.join("downloads", new_filename)):
+                    new_filename = f"{base_name}_{counter}{extension}"
+                    counter += 1
+                    
+                filepath = os.path.join("downloads", new_filename)
+                
+                # Salvar arquivo
+                with open(filepath, "wb") as f:
+                    f.write(base64.b64decode(b64data))
+                    
+                actual_size = os.path.getsize(filepath)
+                self.log_message(f"✅ Arquivo baixado: {new_filename} ({actual_size/1024:.1f}KB)", "#27ae60")
+                messagebox.showinfo("Sucesso", f"Arquivo salvo em:\n{filepath}")
+                
+            except Exception as e:
+                self.log_message(f"❌ Erro ao baixar arquivo: {e}", "#e74c3c")
+                messagebox.showerror("Erro", f"Erro ao baixar arquivo: {e}")
         else:
-            print("❌ Opção inválida! Digite apenas 1, 2, 3, 4 ou 5.")
+            self.log_message(f"📎 Arquivo de {sender} ignorado: {filename}", "#95a5a6")
+            
+    def handle_messages(self):
+        """Thread para receber mensagens do servidor"""
+        while self.running:
+            try:
+                msg = self.client.recv(2048 * 10).decode('utf-8')
+                if not msg:
+                    break
+                    
+                key, value = msg.split("=", 1)
+                
+                if key == "msg":
+                    # Processar mensagens de texto
+                    if "[Servidor]:" in value:
+                        if "já está sendo usado" in value:
+                            self.waiting_for_name = True
+                            self.name_registered = False
+                            self.log_message(value, "#e74c3c")
+                            self.window.after(0, self.request_new_name)
+                        elif "Bem-vindo ao chat" in value:
+                            self.name_registered = True
+                            self.waiting_for_name = False
+                            self.log_message(value, "#27ae60")
+                            self.update_status("🟢 Conectado", "#27ae60")
+                            self.enable_controls(True)
+                            self.refresh_users()
+                        else:
+                            self.log_message(value, "#f39c12")
+                    else:
+                        self.log_message(value, "#ecf0f1")
+                        
+                elif key == "online_users":
+                    # Processar lista de usuários
+                    try:
+                        users = json.loads(value)
+                        self.update_users_list(users)
+                        self.log_message(f"👥 {len(users)} outros usuários online", "#3498db")
+                    except json.JSONDecodeError as e:
+                        self.log_message(f"❌ Erro ao processar lista de usuários: {e}", "#e74c3c")
+                        
+                elif key == "file":
+                    # Processar arquivo recebido
+                    parts = value.split("||", 2)
+                    if len(parts) == 3:
+                        sender, filename, b64data = parts
+                        file_size = (len(b64data) * 3) // 4
+                        self.log_message(f"📎 Arquivo recebido de {sender}: {filename}", "#3498db")
+                        
+                        # Processar arquivo na thread principal
+                        self.window.after(0, lambda: self.process_file_offer(sender, filename, b64data, file_size))
+                    else:
+                        self.log_message("❌ Arquivo recebido em formato inválido", "#e74c3c")
+                        
+            except Exception as e:
+                if self.running:
+                    self.log_message(f"❌ Erro ao receber mensagem: {e}", "#e74c3c")
+                break
+                
+    def request_name(self):
+        """Solicita nome do usuário"""
+        while not self.name_registered and self.running:
+            if self.waiting_for_name:
+                name = simpledialog.askstring("Nome Duplicado", 
+                                            "Este nome já está em uso.\nDigite um novo nome:")
+            else:
+                name = simpledialog.askstring("Bem-vindo", 
+                                            "Digite seu nome para entrar no chat:",
+                                            parent=self.window)
+                
+            if not name:
+                if messagebox.askyesno("Sair", "Deseja sair do chat?"):
+                    self.on_closing()
+                    return
+                continue
+                
+            try:
+                message_formatted = {"type": "name", "control": "dontcare", "message": name}
+                self.client.send(json.dumps(message_formatted).encode('utf-8'))
+                self.current_user = name
+                time.sleep(1)  # Aguardar resposta
+            except Exception as e:
+                messagebox.showerror("Erro", f"Erro ao enviar nome: {e}")
+                break
+                
+    def request_new_name(self):
+        """Solicita novo nome quando o atual está duplicado"""
+        if self.waiting_for_name:
+            name = simpledialog.askstring("Nome Duplicado", 
+                                        "Este nome já está em uso.\nDigite um novo nome:",
+                                        parent=self.window)
+            if name:
+                try:
+                    message_formatted = {"type": "name", "control": "dontcare", "message": name}
+                    self.client.send(json.dumps(message_formatted).encode('utf-8'))
+                    self.current_user = name
+                except Exception as e:
+                    messagebox.showerror("Erro", f"Erro ao enviar nome: {e}")
+                    
+    def connect_to_server(self):
+        """Conecta ao servidor"""
+        try:
+            # Descobrir servidor automaticamente
+            SERVER_IP = discover_server()
+            
+            if not SERVER_IP:
+                # Se não encontrou automaticamente, solicitar IP manual
+                SERVER_IP = simpledialog.askstring("Servidor", 
+                                                 "Servidor não encontrado automaticamente.\n"
+                                                 "Digite o IP do servidor:",
+                                                 parent=self.window)
+                if not SERVER_IP:
+                    return False
+                    
+            PORT = 5050
+            
+            # Conectar ao servidor
+            self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.client.connect((SERVER_IP, PORT))
+            
+            self.log_message(f"🔗 Conectado ao servidor {SERVER_IP}:{PORT}", "#27ae60")
+            self.update_status("🟡 Conectado - Configurando nome...", "#f39c12")
+            
+            # Iniciar thread para receber mensagens
+            msg_thread = threading.Thread(target=self.handle_messages, daemon=True)
+            msg_thread.start()
+            
+            # Solicitar nome do usuário
+            self.window.after(1000, self.request_name)
+            
+            return True
+            
+        except Exception as e:
+            self.log_message(f"❌ Erro ao conectar: {e}", "#e74c3c")
+            messagebox.showerror("Erro de Conexão", f"Não foi possível conectar ao servidor:\n{e}")
+            return False
+            
+    def on_closing(self):
+        """Manipula o fechamento da janela"""
+        self.running = False
+        
+        try:
+            if self.client:
+                self.client.close()
+        except:
+            pass
+            
+        self.window.quit()
+        self.window.destroy()
+        
+    def run(self):
+        """Executa o cliente de chat"""
+        # Tentar conectar ao servidor
+        if self.connect_to_server():
+            # Executar interface gráfica
+            self.window.mainloop()
+        else:
+            self.window.destroy()
 
-def start():
-    """
-    Inicia o cliente de chat
-    Cria thread separada para receber mensagens e inicia interface de usuario
-    """
-    # Criar thread daemon para receber mensagens em background
-    thread1 = threading.Thread(target=handle_messages, daemon=True)
-    thread1.start()
-    # Iniciar interface de usuario no thread principal
-    start_sending()
-
-# Ponto de entrada do programa
-if __name__ == "__main__":
+def main():
+    """Função principal"""
     try:
-        start()
+        client = ChatClientGUI()
+        client.run()
     except KeyboardInterrupt:
         print("\n👋 Cliente desconectado.")
     except Exception as e:
         print(f"❌ Erro no cliente: {e}")
-    finally:
-        # Garantir fechamento do socket
-        try:
-            client.close()
-        except:
-            pass
+
+if __name__ == "__main__":
+    main()
